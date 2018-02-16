@@ -30,6 +30,9 @@ var CONCURRENT_REQUESTS = 2;
 var PAGE_SIZE = 10000;
 
 function ooniWorker(domain, done) {
+  if (!domain || !domain.length) {
+    return done();
+  }
   var info = {domain: domain, page: 0};
   getMeasurements(info)
   .then(downloadMeasurements)
@@ -41,27 +44,10 @@ function ooniWorker(domain, done) {
   });
 }
 
-function handler(prop, func, info, resolve, err, result) {
-  if(!info[prop]) {
-    info[prop] = [];
-  }
-  if(!err && result) {
-    info[prop] = Array.from(new Set(info[prop].concat(result)));
-  }
-
-  var next = info.queue.pop();
-  if(next) {
-    func(next, handler.bind(this, prop, func, info, resolve));
-  } else {
-    resolve(info);
-  }
-}
-
-
 // Get the list of measurementID's associated with a domain
 function getMeasurements(info) {
   var page = info.page * PAGE_SIZE;
-  return axios.get("https://api.ooni.io/api/v1/measurements?test_name=web_connectivity&limit=" + PAGE_SIZE + "&offset=" + page + "&input=" + info.domain)
+  return axios.get("https://api.ooni.io/api/v1/measurements?test_name=web_connectivity&limit=" + PAGE_SIZE + "&offset=" + page + "&input=" + encodeURIComponent(info.domain))
   .then(onMeasurement.bind(this, info)).catch(onFailMeasure.bind(this,info));
 }
 
@@ -117,8 +103,6 @@ function onError(info, id, err) {
   info.failures.push(id);
   return downloadMeasurements(info);
 }
-
-
 
 var length = fs.statSync(inFile).size;
 fs.createReadStream(inFile)

@@ -62,7 +62,7 @@ function handler(prop, func, info, resolve, err, result) {
 function getMeasurements(info) {
   var page = info.page * PAGE_SIZE;
   return axios.get("https://api.ooni.io/api/v1/measurements?test_name=web_connectivity&limit=" + PAGE_SIZE + "&offset=" + page + "&input=" + info.domain)
-  .then(onMeasurement.bind(this, info));
+  .then(onMeasurement.bind(this, info)).catch(onFailMeasure.bind(this,info));
 }
 
 function onMeasurement(info, response) {
@@ -78,6 +78,12 @@ function onMeasurement(info, response) {
   } else {
     return info;
   }
+}
+
+function onFailMeasure(info, err) {
+  info.indexFailure = err;
+  info.ids = [];
+  return info;
 }
 
 // Download the measurementID's associated with a domain

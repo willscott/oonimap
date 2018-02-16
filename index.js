@@ -24,7 +24,7 @@ if(fs.existsSync(outFolder)) {
   process.exit(1);
 }
 fs.mkdirSync(outFolder);
-var outFile = outFolder + ".json";
+var outFile = path.join(outFolder, "log.json");
 
 var CONCURRENT_REQUESTS = 2;
 var PAGE_SIZE = 10000;
@@ -66,6 +66,7 @@ function getMeasurements(info) {
 }
 
 function onMeasurement(info, response) {
+  console.log('index for ' + info.domain + '.');
   if (!info.ids) {
     info.ids = [];
   }
@@ -101,7 +102,11 @@ function downloadMeasurements(info) {
 }
 
 function onDownload(info, id, response) {
-  fs.writeFileSync(path.join(outFolder, id), JSON.serialize(response.data));
+  var df = path.join(outFolder, info.domain);
+  if (!fs.existsSync(df)) {
+    fs.mkdirSync(df);
+  }
+  fs.writeFileSync(path.join(df, id), JSON.serialize(response.data));
   return downloadMeasurements(info);
 }
 

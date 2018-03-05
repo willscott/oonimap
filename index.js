@@ -1,113 +1,35 @@
 'use strict';
 
 /**
- * Given a list of domains, download relevant OONI measurements.
+ * OONIMap runs a selector function across the OONI measurement corpus.
+ * It can either be used to process reports for a specific slice of OONI
+ * data retrieved online from the API, or against the full OONI corpus in
+ * autoclaved format (Roughly 2TB at the time of writing).
  */
 
-var fs = require('fs');
-var chalk = require('chalk');
-var axios = require('axios');
-var es = require('event-stream');
-var mapConcurrent = require('map-stream-concurrent');
-var path = require('path');
-var progress = require('progressbar-stream');
-
-
-if (!process.argv[2]) {
-  console.error(chalk.red("Usage: oonimap <domains> <outputFolder>"));
-  process.exit(1);
-}
-var inFile = process.argv[2];
-var outFolder = process.argv[3];
-if(fs.existsSync(outFolder)) {
-  console.error(chalk.red("Output folder exists. cowardly exiting."));
-  process.exit(1);
-}
-fs.mkdirSync(outFolder);
-var outFile = path.join(outFolder, "log.json");
-
-var CONCURRENT_REQUESTS = 2;
-var PAGE_SIZE = 10000;
-
-function ooniWorker(domain, done) {
-  if (!domain || !domain.length) {
-    return done();
-  }
-  var info = {domain: domain, page: 0};
-  getMeasurements(info)
-  .then(downloadMeasurements)
-  .then(function(result) {
-    done(result);
-  }).catch(function(err) {
-    console.warn(err);
-    done();
-  });
-}
-
-// Get the list of measurementID's associated with a domain
-function getMeasurements(info) {
-  var page = info.page * PAGE_SIZE;
-  return axios.get("https://api.ooni.io/api/v1/measurements?test_name=web_connectivity&limit=" + PAGE_SIZE + "&offset=" + page + "&input=" + encodeURIComponent(info.domain))
-  .then(onMeasurement.bind(this, info)).catch(onFailMeasure.bind(this,info));
-}
-
-function onMeasurement(info, response) {
-  console.log('index for ' + info.domain + '.');
-  if (!info.ids) {
-    info.ids = [];
-  }
-  info.ids = info.ids.concat(response.data.results.map(function(result) {
-    return result.measurement_id;
-  }));
-  if(response.data.metadata.next_url) {
-    info.page += 1;
-    return getMeasurements(info);
+/**
+ * OONIMap
+ * If 'corpus' is unset, the API will be used, and selector will
+ * specify a domain (string) or list of domains (array) to process against.
+ * If corpus is a directory containing OONI data, selector can be
+ * a domain (string), list of domains (array), regex of domains to match, or
+ * unset (to execute func on all records).
+ * func is a function called, on each relevant record.
+ * Returns a readable stream of the outputs of func.
+ */
+module.exports = function(selector, corpus, func) {
+  if (corpus) {
+    var corpus = require('./corpus');
+    return corpus.map(selector, corpus, func);
   } else {
-    return info;
+    var api = require('./api');
+    var can = require('./uncan');
+    var tmp = require('temporary');
+    var dir = new tmp.Dir();
+    return api.DownloadMeasurements(selector, dir.path)
+      .pipe(can.mapJSON(1, func))
+      .on('finish', function () {
+        dir.rmdir();
+      });
   }
-}
-
-function onFailMeasure(info, err) {
-  info.indexFailure = err;
-  info.ids = [];
-  return info;
-}
-
-// Download the measurementID's associated with a domain
-function downloadMeasurements(info) {
-  if (!info.queue) {
-    info.queue = info.ids;
-  }
-
-  var next = info.queue.pop();
-  if (!next) {
-    return Promise.resolve(info);
-  }
-
-  return axios.get("https://api.ooni.io/api/v1/measurement/" + next).then(onDownload.bind(this, info, next)).catch(onError.bind(this,info, next));
-}
-
-function onDownload(info, id, response) {
-  var df = path.join(outFolder, info.domain);
-  if (!fs.existsSync(df)) {
-    fs.mkdirSync(df);
-  }
-  fs.writeFileSync(path.join(df, id), JSON.serialize(response.data));
-  return downloadMeasurements(info);
-}
-
-function onError(info, id, err) {
-  if (!info.failures) {
-    info.failures=[];
-  }
-  info.failures.push(id);
-  return downloadMeasurements(info);
-}
-
-var length = fs.statSync(inFile).size;
-fs.createReadStream(inFile)
-    .pipe(progress({total: length}))
-    .pipe(es.split())
-    .pipe(mapConcurrent(CONCURRENT_REQUESTS, ooniWorker))
-    .pipe(es.join('\n'))
-    .pipe(fs.createWriteStream(outFile));
+};

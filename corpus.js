@@ -73,7 +73,7 @@ exports.map = function(domains, root, func) {
 
 if (require.main === module) {
   if (!process.argv[2]) {
-    console.error(chalk.red("Usage: oonimap <ooniroot> <domainsofinterest> <outfile>"));
+    console.error(chalk.red("Usage: corpus <ooniroot> <domainsofinterest> <outfile>"));
     process.exit(1);
   }
   var inRoot = process.argv[2];
@@ -91,5 +91,5 @@ if (require.main === module) {
     data = data.trim().split('\n');
   }
 
-  return exports.map(data, inRoot, func).pipe(fs.createWriteStream(outFile));
+  return exports.map(data, inRoot, function (r) {return r}).pipe(fs.createWriteStream(outFile));
 }
